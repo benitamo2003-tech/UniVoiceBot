@@ -19,7 +19,7 @@ def run_flask():
     port = int(os.environ.get("PORT", 8080))
     app_flask.run(host='0.0.0.0', port=port)
 # ================= CONFIG =================
-TOKEN = "8558196271:AAGsm4xqHnFeT7avPKcOVJvcy5pWrq5ZlN0"
+TOKEN = os.environ.get("BOT_TOKEN")
 url = os.environ.get("SELF_URL")
 ADMIN_ID = 7997819976
 CHANNEL_ID = "@UniVoiceHub"
