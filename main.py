@@ -23,7 +23,7 @@ TOKEN = os.environ.get("BOT_TOKEN")
 url = os.environ.get("SELF_URL")
 ADMIN_ID = 7997819976
 CHANNEL_ID = "@UniVoiceHub"
-BOT_USERNAME = "UniEchoFeedbackBot"
+BOT_USERNAME = "UniFeedbackBot"
 CHANNEL_DIRECT_LINK = "https://t.me/UniVoiceHub?direct"
 CHANNEL_TAG = "@UniVoiceHub"
 
