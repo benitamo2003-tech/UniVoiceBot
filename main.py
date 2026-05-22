@@ -9,15 +9,15 @@ from telegram.ext import (
 )
 # ================= SERVER FOR RENDER (KEEP ALIVE) =================
 # ================= KEEP ALIVE SERVER =================
-#app_flask = Flask(__name__)
+app_flask = Flask(__name__)
 
-#@app_flask.route('/')
-#def home():
-   # return "Bot is Alive!"
+@app_flask.route('/')
+def home():
+    return "Bot is Alive!"
 
-#def run_flask():
-   # port = int(os.environ.get("PORT", 8080))
-   # app_flask.run(host='0.0.0.0', port=port)
+def run_flask():
+    port = int(os.environ.get("PORT", 8080))
+    app_flask.run(host='0.0.0.0', port=port)
 # ================= CONFIG =================
 TOKEN = os.environ.get("BOT_TOKEN")
 url = os.environ.get("SELF_URL")
@@ -345,7 +345,7 @@ async def admin_reply_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ================= MAIN =================
 # ================= MAIN =================
 def main():
-  #  threading.Thread(target=run_flask, daemon=True).start()
+    threading.Thread(target=run_flask, daemon=True).start()
     app = Application.builder().token(TOKEN).build()
 
     conv = ConversationHandler(
