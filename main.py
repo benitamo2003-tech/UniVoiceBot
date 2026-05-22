@@ -8,9 +8,8 @@ from telegram.ext import (
 )
 # ================= SERVER FOR RENDER (KEEP ALIVE) =================
 # ================= KEEP ALIVE SERVER =================
-if __name__ == "__main__":
-    print("BOT STARTED")
-    app.run_polling(drop_pending_updates=True)
+if __name__ == "__name__":
+    
     
 @app_flask.route('/')
 def home():
@@ -381,10 +380,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_msg))
 
     print("✅ ربات آنلاین شد!")
-    app.run_polling(
-    drop_pending_updates=True,
-    allowed_updates=Update.ALL_TYPES
-)
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main() 
