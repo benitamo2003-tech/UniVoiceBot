@@ -8,16 +8,15 @@ from telegram.ext import (
 )
 # ================= SERVER FOR RENDER (KEEP ALIVE) =================
 # ================= KEEP ALIVE SERVER =================
-if __name__ == "__name__":
-    
-    
-@app_flask.route('/')
+app_flask = Flask(__name__)
+
+@app_flask.route("/")
 def home():
     return "Bot is Alive!"
 
 def run_flask():
     port = int(os.environ.get("PORT", 8080))
-    app_flask.run(host='0.0.0.0', port=port)
+    app_flask.run(host="0.0.0.0", port=port)
 # ================= CONFIG =================
 TOKEN = os.environ.get("BOT_TOKEN")
 url = os.environ.get("SELF_URL")
@@ -70,13 +69,10 @@ def build_form_text(data):
     return "\n".join(lines)
 
 
-def build_form_text(data):
-    lines = []
-    for title, key in FORM_QUESTIONS:
-        value = data.get(key, "-")
-        lines.append(f"*{title}:*\n{value}\n")
-    lines.extend(["──────────────", f"🆔 {CHANNEL_TAG}"])
-    return "\n".join(lines)
+def cancel_markup():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("❌ انصراف", callback_data="delete_form")]
+    ])
 
 # ================= HANDLERS =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
