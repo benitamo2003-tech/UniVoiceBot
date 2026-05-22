@@ -1,4 +1,3 @@
-
 import os
 import threading
 from flask import Flask
@@ -9,8 +8,10 @@ from telegram.ext import (
 )
 # ================= SERVER FOR RENDER (KEEP ALIVE) =================
 # ================= KEEP ALIVE SERVER =================
-app_flask = Flask(__name__)
-
+if __name__ == "__main__":
+    print("BOT STARTED")
+    app.run_polling(drop_pending_updates=True)
+    
 @app_flask.route('/')
 def home():
     return "Bot is Alive!"
@@ -380,7 +381,10 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_msg))
 
     print("✅ ربات آنلاین شد!")
-    app.run_polling()
+    app.run_polling(
+    drop_pending_updates=True,
+    allowed_updates=Update.ALL_TYPES
+)
 
 if __name__ == "__main__":
     main() 
