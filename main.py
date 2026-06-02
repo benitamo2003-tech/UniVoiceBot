@@ -19,25 +19,13 @@ def run_flask():
     port = int(os.environ.get("PORT", 8080))
     app_flask.run(host="0.0.0.0", port=port)
 
-if __name__ == '__main__':
-    # ۱. فلاسك را در یک Thread جداگانه و موازی روشن می‌کنیم
-    flask_thread = threading.Thread(target=run_flask)
-    flask_thread.daemon = True
-    flask_thread.start()
-    
-    print("✅ سرور Flask در پس‌زمینه فعال شد.")
-
-    # ۲. حالا ربات تلگرام را روی خط اصلی اجرا می‌کنیم تا متوقف نشود
-    # (اسم متغیر رباتت را جایگزین 'application' کن، مثلاً app یا application)
-    application.run_polling(drop_pending_updates=True)
-
 # ================= CONFIG =================
 TOKEN = os.environ.get("BOT_TOKEN")
 url = os.environ.get("SELF_URL")
 ADMIN_ID = 7997819976
 CHANNEL_ID = "@UniVoiceHub"
 BOT_USERNAME = "UniFeedbackBot"
-CHANNEL_DIRECT_LINK = "[https://t.me/UniVoiceHub?direct](https://t.me/UniVoiceHub?direct)"
+CHANNEL_DIRECT_LINK = "https://t.me/UniVoiceHub?direct"
 CHANNEL_TAG = "@UniVoiceHub"
 
 # ================= STATES =================
@@ -60,8 +48,7 @@ reply_sessions = {}
 active_chats = {}  # user_id -> True (نشست‌های فعال چت ناشناس)
 ai_chats = {}      # user_id -> True (نشست‌های فعال هوش مصنوعی)
 
-# ================= AI HELPER FUNCTION (STREAMING VERSION) =================
-# ================= AI HELPER FUNCTION (STREAMING VERSION) =================
+# ================= AI HELPER FUNCTION =================
 def ask_ai(user_prompt):
     try:
         api_key = os.environ.get("GEMINI_API_KEY")
@@ -69,7 +56,6 @@ def ask_ai(user_prompt):
             yield "❌ خطا: متغیر GEMINI_API_KEY در پنل رندر تعریف نشده است!"
             return
             
-        # تعریف کلاینت
         client = genai.Client(api_key=api_key)
         
         system_instruction = (
@@ -106,7 +92,7 @@ def reaction_keyboard(msg_id):
             InlineKeyboardButton(f"👍 {len(data['likes'])}", callback_data=f"like:{msg_id}"),
             InlineKeyboardButton(f"👎 {len(data['dislikes'])}", callback_data=f"dislike:{msg_id}")
         ],
-        [InlineKeyboardButton("📝 ثبت نظر", url=f"https://t.me/{BOT_USERNAME}?start=form")]
+        [InlineKeyboardButton("📝 ثبت نظر", url=f"[https://t.me/](https://t.me/){BOT_USERNAME}?start=form")]
     ])
 
 def build_form_text(data):
@@ -208,7 +194,7 @@ async def ask_final(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ask_match(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["پایان‌ترم"] = update.message.text
-    await update.message.reply_text("📊 * (از 1 تا 5) تطبیق با جزوه:*\nتطبیق سوالات با جزوه (از 1 تا 5)؟", parse_mode="Markdown", reply_markup=cancel_markup())
+    await update.message.reply_text("📊 * (از 1 تا 5) تطبیق با جزوه:*\nتطبیق سوالات با جزوه (از 1 تا 5) Meso؟", parse_mode="Markdown", reply_markup=cancel_markup())
     return ASK_MATCH
 
 async def ask_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -297,7 +283,7 @@ async def ai_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.answer()
     user_id = update.callback_query.from_user.id
     ai_chats[user_id] = True  # فعال کردن نشست هوش مصنوعی
-    if user_id in active_chats: del active_chats[user_id] # قطع چت ناشناس در صورت فعال بودن
+    if user_id in active_chats: del active_chats[user_id] 
     
     keyboard = [
         [InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="ai_close")]
@@ -320,8 +306,8 @@ async def ai_close(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def anon_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.answer()
     user_id = update.callback_query.from_user.id
-    active_chats[user_id] = True  # شروع نشست چت ناشناس
-    if user_id in ai_chats: del ai_chats[user_id] # قطع چت هوش مصنوعی در صورت فعال بودن
+    active_chats[user_id] = True  
+    if user_id in ai_chats: del ai_chats[user_id] 
     
     keyboard = [[InlineKeyboardButton("❌ پایان چت ناشناس", callback_data="end_chat")]]
     await update.callback_query.message.reply_text(
@@ -351,100 +337,61 @@ async def receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = user.id
     user_text = update.message.text
 
-    # ۱. پردازش چت با هوش مصنوعی (مدیریت فوق‌العاده هوشمند استریم و کدهای برنامه‌نویسی)
     if ai_chats.get(user_id):
         waiting_msg = await update.message.reply_text("🤖 در حال پردازش درخواست شما...")
-        
         last_sent_text = ""
-        final_clean_response = ""
         
         for current_text in ask_ai(user_text):
             final_clean_response = current_text.replace("\n\n✍️ *در حال نوشتن کدهای درخواستی...*", "")
-            
-            # برای جلوگیری از خطای تلگرام، متن را فقط در صورت تغییرات واقعی ادیت می‌کنیم
             if current_text != last_sent_text:
                 try:
-                    # تلاش برای ادیت با حالت مارک‌داون تا کدها به مرور زمان زیبا نشان داده شوند
                     await waiting_msg.edit_text(current_text, parse_mode="Markdown")
                     last_sent_text = current_text
                 except:
                     try:
-                        # اگر ساختار مارک‌داون به علت ناقص بودن کد ارور داد، موقتاً به صورت متن ساده نمایش بده
                         await waiting_msg.edit_text(current_text)
                         last_sent_text = current_text
                     except:
                         pass
                         
-        # نمایش نهایی پاسخ کاملاً فرمت‌بندی شده به همراه کلید بازگشت
         keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="ai_close")]]
         try:
-            await waiting_msg.edit_text(
-                text=final_clean_response,
-                parse_mode="Markdown",
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
+            await waiting_msg.edit_text(text=final_clean_response, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
         except:
             try:
-                # اگر مارک‌داون نهایی به هر دلیلی تداخل کاراکتر داشت، به صورت متن ساده فرستاده می‌شود تا کدها حتماً برسند
-                await waiting_msg.edit_text(
-                    text=final_clean_response,
-                    reply_markup=InlineKeyboardMarkup(keyboard)
-                )
+                await waiting_msg.edit_text(text=final_clean_response, reply_markup=InlineKeyboardMarkup(keyboard))
             except:
                 pass
         return
 
-    # ۲. اگر ادمین پیامی بفرستد و در حال پاسخ به کسی باشد
     if user_id == ADMIN_ID and user_id in reply_sessions:
         target_id = reply_sessions[user_id]
         user_keyboard = [
             [InlineKeyboardButton("✉️ پاسخ به ادمین", callback_data="anon_start")],
             [InlineKeyboardButton("❌ پایان چت", callback_data="end_chat")]
         ]
-        
         try:
-            await context.bot.send_message(
-                chat_id=target_id, 
-                text=f"📩 **پیام جدید از طرف ادمین:**\n\n{user_text}",
-                reply_markup=InlineKeyboardMarkup(user_keyboard),
-                parse_mode="Markdown"
-            )
+            await context.bot.send_message(chat_id=target_id, text=f"📩 **پیام جدید از طرف ادمین:**\n\n{user_text}", reply_markup=InlineKeyboardMarkup(user_keyboard), parse_mode="Markdown")
             await update.message.reply_text(f"✅ پیام شما به کاربر `{target_id}` تحویل داده شد.")
         except:
-            await update.message.reply_text("❌ خطا: امکان ارسال پیام به کاربر وجود ندارد (شاید ربات را بلاک کرده باشد).")
+            await update.message.reply_text("❌ خطا: امکان ارسال پیام به کاربر وجود ندارد.")
         return
 
-    # ۳. اگر کاربر عادی در حالت چت ناشناس فعال باشد
     if active_chats.get(user_id):
         username = f"@{user.username}" if user.username else "بدون یوزرنیم"
         admin_keyboard = [
             [InlineKeyboardButton("✉️ پاسخ به این کاربر", callback_data=f"reply_to:{user_id}")],
             [InlineKeyboardButton("❌ قطع دسترسی کاربر", callback_data="end_chat")]
         ]
-        
         admin_info = (
-            f"🕵️ **پیام ناشناس جدید**\n"
-            f"👤 **فرستنده:** {user.full_name}\n"
-            f"🆔 `{user_id}` | {username}\n"
-            f"────────────────\n"
-            f"📝 **متن:** {user_text}"
+            f"🕵️ **پیام ناشناس جدید**\n👤 **فرستنده:** {user.full_name}\n🆔 `{user_id}` | {username}\n"
+            f"────────────────\n📝 **متن:** {user_text}"
         )
-        
-        await context.bot.send_message(
-            chat_id=ADMIN_ID, 
-            text=admin_info, 
-            reply_markup=InlineKeyboardMarkup(admin_keyboard),
-            parse_mode="Markdown"
-        )
-        
+        await context.bot.send_message(chat_id=ADMIN_ID, text=admin_info, reply_markup=InlineKeyboardMarkup(admin_keyboard), parse_mode="Markdown")
         user_status_keyboard = [[InlineKeyboardButton("❌ پایان گفتگو", callback_data="end_chat")]]
-        await update.message.reply_text(
-            "🚀 پیام شما با موفقیت به ادمین رسید.\nشما می‌توانید پیام‌های بعدی خود را همینجا بفرستید یا چت را تمام کنید:",
-            reply_markup=InlineKeyboardMarkup(user_status_keyboard)
-        )
+        await update.message.reply_text("🚀 پیام شما با موفقیت به ادمین رسید.\nشما می‌توانید پیام‌های بعدی خود را همینجا بفرستید:", reply_markup=InlineKeyboardMarkup(user_status_keyboard))
         return
 
-    # ۴. پیام‌های متفرقه خارج از نشست‌ها
     await update.message.reply_text("⚠️ لطفاً برای استفاده از امکانات ربات، ابتدا یکی از گزینه‌های منو را در دستور /start انتخاب کنید.")
 
 async def admin_reply_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -453,9 +400,15 @@ async def admin_reply_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_sessions[ADMIN_ID] = target_id
     await update.callback_query.message.reply_text(f"✍️ در حال پاسخ به `{target_id}` هستید. پیام خود را بفرستید:")
 
-# ================= MAIN =================
+# ================= MAIN FUNCTION =================
 def main():
-    threading.Thread(target=run_flask, daemon=True).start()
+    # ۱. اجرای فلاسك به صورت موازی در ترد مجزا
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+    print("✅ سرور Flask در پس‌زمینه فعال شد.")
+
+    # ۲. ساخت متغیر ربات به صورت کاملاً استاندارد با اسم کوچک 'app'
     app = Application.builder().token(TOKEN).build()
 
     conv = ConversationHandler(
@@ -491,7 +444,7 @@ def main():
     app.add_handler(CallbackQueryHandler(end_chat, pattern="^end_chat$"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_msg))
 
-    print("✅ ربات آنلاین شد!")
+    print("✅ ربات تلگرام با موفقیت آنلاین شد!")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
