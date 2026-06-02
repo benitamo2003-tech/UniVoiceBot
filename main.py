@@ -48,14 +48,15 @@ reply_sessions = {}
 active_chats = {}  # user_id -> True (نشست‌های فعال چت ناشناس)
 ai_chats = {}      # user_id -> True (نشست‌های فعال هوش مصنوعی)
 
-# ================= AI HELPER FUNCTION =================
+# ================= AI HELPER FUNCTION (STREAMING VERSION) =================
 def ask_ai(user_prompt):
     try:
         # دریافت کلید API از رندر
         api_key = os.environ.get("GEMINI_API_KEY")
         
         if not api_key:
-            return "❌ خطا: متغیر GEMINI_API_KEY در پنل رندر تعریف نشده یا خالی است!"
+            yield "❌ خطا: متغیر GEMINI_API_KEY در پنل رندر تعریف نشده یا خالی است!"
+            return
             
         client = genai.Client(api_key=api_key)
         
@@ -64,16 +65,31 @@ def ask_ai(user_prompt):
             "به سوالات درسی، برنامه‌نویسی، معادلات و علمی آن‌ها به زبان فارسی روان، دقیق و ساختاریافته پاسخ بده."
         )
         
-        response = client.models.generate_content(
+        # استفاده از متد استریم برای دریافت زنده و کلمه به کلمه پاسخ از گوگل
+        response_stream = client.models.generate_content_stream(
             model='gemini-2.5-flash',
             contents=user_prompt,
             config={'system_instruction': system_instruction}
         )
-        return response.text
+        
+        full_response = ""
+        counter = 0
+        
+        for chunk in response_stream:
+            if chunk.text:
+                full_response += chunk.text
+                counter += 1
+                # هر ۳ تکه یک‌بار متن را می‌فرستیم تا سرعت آپدیت در تلگرام منطقی باشد و ربات لیمیت نشود
+                if counter % 3 == 0:
+                    yield full_response + " ✍️..."
+                    
+        # ارسال نهایی متن کامل بدون علامت در حال نوشتن
+        yield full_response
+
     except Exception as e:
         print(f"Error in Gemini API: {e}")
-        # این خط حالا متن دقیق خطا را بهت نشان می‌دهد تا بفهمیم مشکل از کجاست
-        return f"⚠️ خطای فنی در اتصال به گوگل رخ داده است:\n`{str(e)}`"
+        yield f"⚠️ خطای فنی در اتصال به گوگل رخ داده است:\n`{str(e)}`"
+
 # ================= HELPERS =================
 def reaction_keyboard(msg_id):
     data = post_reactions.get(msg_id, {"likes": set(), "dislikes": set()})
@@ -184,7 +200,7 @@ async def ask_final(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ask_match(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["پایان‌ترم"] = update.message.text
-    await update.message.reply_text("📊 * (از 1 تا 5) تطبیق با جزوه:*\nتطبیق سوالات با جزوه (از 1 تا 5)؟", parse_mode="Markdown", reply_markup=cancel_markup())
+    await update.message.reply_text("📊 * (از 1 تا 5) تطبیق با جزوه:*\nتطبیق سوالات با جزوه (از 1 تا 5)？", parse_mode="Markdown", reply_markup=cancel_markup())
     return ASK_MATCH
 
 async def ask_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -194,7 +210,7 @@ async def ask_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ask_conclusion(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["راه ارتباطی"] = update.message.text
-    await update.message.reply_text("📌 *نتیجه‌گیری:*\nدر کل این استاد را پیشنهاد می‌کنید？", parse_mode="Markdown", reply_markup=cancel_markup())
+    await update.message.reply_text("📌 *نتیجه‌گیری:*\nدر کل این استاد را پیشنهاد می‌کنید؟", parse_mode="Markdown", reply_markup=cancel_markup())
     return ASK_CONCLUSION
 
 async def ask_semester(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -327,14 +343,23 @@ async def receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = user.id
     user_text = update.message.text
 
-    # ۱. پردازش چت با هوش مصنوعی
+    # ۱. پردازش چت با هوش مصنوعی (ویرایش زنده و استریم)
     if ai_chats.get(user_id):
-        waiting_msg = await update.message.reply_text("🤖 در حال تفکر و بررسی سوال شما... لطفاً چند لحظه صبر کنید.")
-        ai_response = ask_ai(user_text)
+        waiting_msg = await update.message.reply_text("🤖 در حال بررسی سوال شما...")
         
-        # ساخت مجدد کیبورد بازگشت برای راحتی کاربر
+        # دریافت تکه تکه جواب از تابع کمکی
+        for current_text in ask_ai(user_text):
+            try:
+                await waiting_msg.edit_text(current_text)
+            except:
+                pass # جلوگیری از ارور تکرار متن در تلگرام
+                
+        # اضافه کردن منوی بازگشت پس از پایان نوشتن
         keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="ai_close")]]
-        await waiting_msg.edit_text(ai_response, reply_markup=InlineKeyboardMarkup(keyboard))
+        try:
+            await waiting_msg.edit_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
+        except:
+            pass
         return
 
     # ۲. اگر ادمین پیامی بفرستد و در حال پاسخ به کسی باشد
