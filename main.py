@@ -51,8 +51,12 @@ ai_chats = {}      # user_id -> True (نشست‌های فعال هوش مصنو
 # ================= AI HELPER FUNCTION =================
 def ask_ai(user_prompt):
     try:
-        # دریافت کلید API از رندر یا جایگذاری مستقیم
-        api_key = os.environ.get("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY")
+        # دریافت کلید API از رندر
+        api_key = os.environ.get("GEMINI_API_KEY")
+        
+        if not api_key:
+            return "❌ خطا: متغیر GEMINI_API_KEY در پنل رندر تعریف نشده یا خالی است!"
+            
         client = genai.Client(api_key=api_key)
         
         system_instruction = (
@@ -68,8 +72,8 @@ def ask_ai(user_prompt):
         return response.text
     except Exception as e:
         print(f"Error in Gemini API: {e}")
-        return "⚠️ متأسفانه در حال حاضر مشکلی در اتصال به هوش مصنوعی به وجود آمده است. لطفاً کمی بعد دوباره تلاش کنید."
-
+        # این خط حالا متن دقیق خطا را بهت نشان می‌دهد تا بفهمیم مشکل از کجاست
+        return f"⚠️ خطای فنی در اتصال به گوگل رخ داده است:\n`{str(e)}`"
 # ================= HELPERS =================
 def reaction_keyboard(msg_id):
     data = post_reactions.get(msg_id, {"likes": set(), "dislikes": set()})
