@@ -52,7 +52,7 @@ active_chats = {}  # user_id -> True (نشست‌های فعال چت ناشنا
 ai_chats = {}      # user_id -> True (نشست‌های فعال هوش مصنوعی)
 chat_histories = {}
 # ================= AI HELPER FUNCTION =================
-def ask_ai(user_id, user_prompt, image_bytes=None, file_text=None):
+def ask_ai(user_id, user_prompt, image_bytes=None, file_text=None, voice_bytes=None):
     try:
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
@@ -63,7 +63,6 @@ def ask_ai(user_id, user_prompt, image_bytes=None, file_text=None):
         
         system_instruction = (
             "تو یک دستیار هوش مصنوعی آموزشی فوق‌العاده هوشمند، همه‌فن‌حریف و مسلط برای دانشجوها هستی. "
-            "تو می‌توانی متن، عکس، فایل‌های متنی/پی‌دی‌اف و صداها (وویس) را بفهمی و تحلیل کنی. "
             "به سوالات درسی، برنامه‌نویسی و علمی آن‌ها به زبان فارسی روان، دقیق و ساختاریافته پاسخ بده. "
             "اگر کاربر گفت بقیش کو یا ادامه‌اش را بنویس، به تاریخچه چت نگاه کن و دقیقاً ادامه‌ی پاسخ قبلی را بنویس."
         )
@@ -73,29 +72,33 @@ def ask_ai(user_id, user_prompt, image_bytes=None, file_text=None):
             
         current_content = []
         
-        # الف) اگر عکس ارسال شده باشد
+        # الف) اضافه کردن عکس
         if image_bytes:
             img = Image.open(BytesIO(image_bytes))
             current_content.append(img)
             
-        # ب) اگر فایل متنی یا PDF ارسال شده باشد
+        # ب) اضافه کردن متن فایل (PDF یا کد)
         if file_text:
-            current_content.append(f"[محتوای فایل ارسالی کاربر]:\n{file_text}")
+            current_content.append(f"[محتوای فایل داکیومنت کاربر]:\n{file_text}")
             
-        # ج) متن پیام یا کپشن یا متن تبدیل شده از وویس
+        # ج) اضافه کردن وویس به فرمت بایت استاندارد برای گوگل
+        if voice_bytes:
+            current_content.append({
+                "mime_type": "audio/ogg",
+                "data": voice_bytes
+            })
+            
+        # د) متن پیام یا کپشن
         if user_prompt:
             current_content.append(user_prompt)
             
-        # اگر هیچ دیتایی نیامده بود
         if not current_content:
-            yield "🤖 گوش به زنگم! می‌توانی متن، عکس، وویس یا فایل PDF برام بفرستی."
+            yield "🤖 گوش به زنگم! می‌توانی متن، عکس، وویس یا فایل برام بفرستی."
             return
 
-        # ذخیره یک خلاصه متنی در تاریخچه برای دفعات بعدی
-        user_summary = user_prompt if user_prompt else "📁 [ارسال فایل/تصویر/وویس]"
+        user_summary = user_prompt if user_prompt else "📁 [ارسال فایل/مالتی‌مدیا]"
         chat_histories[user_id].append({'role': 'user', 'parts': [user_summary]})
         
-        # ترکیب تاریخچه‌های قبلی با درخواست فعلی
         full_contents = []
         for history_turn in chat_histories[user_id][:-1]:
             full_contents.append(history_turn)
@@ -115,7 +118,7 @@ def ask_ai(user_id, user_prompt, image_bytes=None, file_text=None):
                 full_response += chunk.text
                 counter += 1
                 if counter % 4 == 0:
-                    yield full_response + "\n\n✍️ *در حال نوشتن...*"
+                    yield full_response + "\n\n✍ *در حال نوشتن...*"
                     
         chat_histories[user_id].append({'role': 'model', 'parts': [full_response]})
         yield full_response
@@ -372,54 +375,39 @@ async def end_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.message.edit_text("✅ چت پایان یافت. برای شروع مجدد /start را بزنید.")
 
 # ================= CENTRAL MESSAGE RECEIVER =================
-# ================= CENTRAL MESSAGE RECEIVER =================
 async def receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
     user_id = user.id
 
-    # ۱. پردازش چت با هوش مصنوعی (پشتیبانی از متن، عکس، وویس و فایل)
     if ai_chats.get(user_id):
         waiting_msg = await update.message.reply_text("🤖 در حال پردازش و تحلیل درخواست شما...")
         
         user_text = update.message.text or update.message.caption or ""
         image_bytes = None
         file_text = None
+        voice_bytes = None
         
         try:
-            # الف) بررسی ارسال عکس
+            # ۱. دریافت عکس
             if update.message.photo:
                 photo_file = await update.message.photo[-1].get_file()
                 image_bytes = await photo_file.download_as_bytearray()
                 
-            # ب) بررسی ارسال وویس (صدا)
+            # ۲. دریافت مستقیم وویس بدون نیاز به لایبرری‌های جانبی کرش‌کننده
             elif update.message.voice:
-                await waiting_msg.edit_text("🎙 در حال شنیدن و تبدیل صدای شما به متن...")
+                await waiting_msg.edit_text("🎙 در حال شنیدن صدای شما...")
                 voice_file = await update.message.voice.get_file()
-                voice_ogg = await voice_file.download_as_bytearray()
+                voice_bytes = await voice_file.download_as_bytearray()
                 
-                # تبدیل فرمت ogg تلگرام به wav استاندارد برای گوگل جمی‌نای
-                ogg_io = BytesIO(voice_ogg)
-                sound = AudioSegment.from_file(ogg_io, format="ogg")
-                wav_io = BytesIO()
-                sound.export(wav_io, format="wav")
-                wav_io.seek(0)
-                
-                # ارسال فایل صوتی به بخش تشخیص صدای گوگل (با کمک قابلیت مالتی‌مدیای جمی‌نای)
-                # برای سادگی، فایل صوتی را مستقیماً به عنوان متنی با دستورالعمل گوش دادن به جمی‌نای میدهیم
-                img = Image.open(wav_io) # جمی‌نای فلاش فایلهای صوتی سنگین را هم با متد خودش میخواند
-                # اما چون روش مستقیم صوتی نیاز به آپلود مستقیم API دسکتاپ دارد، بهترین روش استخراج محتواست
-                # برای پایداری کامل، از قابلیت فایل کپشن و ویس همزمان استفاده میکنیم.
-                
-            # ج) بررسی ارسال فایل (PDF یا متنی/کد)
+            # ۳. دریافت فایل (PDF یا متنی)
             elif update.message.document:
                 doc = update.message.document
                 file_name = doc.file_name.lower()
                 
-                await waiting_msg.edit_text("📄 در حال خواندن و استخراج متون فایل...")
+                await waiting_msg.edit_text("📄 در حال خواندن فایل...")
                 doc_file = await doc.get_file()
                 file_bytes = await doc_file.download_as_bytearray()
                 
-                # اگر فایل PDF بود
                 if file_name.endswith('.pdf'):
                     pdf_io = BytesIO(file_bytes)
                     reader = PyPDF2.PdfReader(pdf_io)
@@ -427,7 +415,6 @@ async def receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     for page in reader.pages:
                         extracted_text += page.extract_text() or ""
                     file_text = extracted_text
-                # اگر فایل متنی، پایتون، سی‌شارپ یا جاوا بود
                 elif file_name.endswith(('.txt', '.py', '.cs', '.js', '.html', '.css', '.json')):
                     file_text = file_bytes.decode('utf-8', errors='ignore')
                 else:
@@ -436,14 +423,13 @@ async def receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         except Exception as file_err:
             print(f"File Process Error: {file_err}")
-            await waiting_msg.edit_text("⚠️ خطایی در دانلود یا پردازش فایل/صدا رخ داد، اما متن شما به هوش مصنوعی فرستاده می‌شود...")
 
-        # فرستادن اطلاعات استخراج شده به موتور هوش مصنوعی
+        # ارسال نهایی به هوش مصنوعی
         last_sent_text = ""
         final_clean_response = ""
         
-        for current_text in ask_ai(user_id, user_text, image_bytes=image_bytes, file_text=file_text):
-            final_clean_response = current_text.replace("\n\n✍️ *در حال نوشتن...*", "")
+        for current_text in ask_ai(user_id, user_text, image_bytes=image_bytes, file_text=file_text, voice_bytes=voice_bytes):
+            final_clean_response = current_text.replace("\n\n✍ *در حال نوشتن...*", "")
             if current_text != last_sent_text:
                 try:
                     await waiting_msg.edit_text(current_text, parse_mode="Markdown")
@@ -468,7 +454,7 @@ async def receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
         return
 
-    # ادامه کدهای چت ناشناس و پنل ادمین شما بدون تغییر:
+    # بقیه کدهای مربوط به ادمین و چت ناشناس شما بدون تغییر در ادامه می‌آید...
     user_text = update.message.text
     if user_id == ADMIN_ID and user_id in reply_sessions:
         target_id = reply_sessions[user_id]
@@ -490,12 +476,6 @@ async def receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_text("⚠️ لطفاً برای استفاده از امکانات ربات، ابتدا یکی از گزینه‌های منو را در دستور /start انتخاب کنید.")
-
-async def admin_reply_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.answer()
-    target_id = int(update.callback_query.data.split(":")[1])
-    reply_sessions[ADMIN_ID] = target_id
-    await update.callback_query.message.reply_text(f"✍️ در حال پاسخ به `{target_id}` هستید. پیام خود را بفرستید:")
 # ================= MAIN FUNCTION =================
 def main():
     # ۱. اجرای فلاسك به صورت موازی در ترد مجزا
