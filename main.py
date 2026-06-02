@@ -25,7 +25,7 @@ url = os.environ.get("SELF_URL")
 ADMIN_ID = 7997819976
 CHANNEL_ID = "@UniVoiceHub"
 BOT_USERNAME = "UniFeedbackBot"
-CHANNEL_DIRECT_LINK = "https://t.me/UniVoiceHub?direct"
+CHANNEL_DIRECT_LINK = "[https://t.me/UniVoiceHub?direct](https://t.me/UniVoiceHub?direct)"
 CHANNEL_TAG = "@UniVoiceHub"
 
 # ================= STATES =================
@@ -51,7 +51,6 @@ ai_chats = {}      # user_id -> True (نشست‌های فعال هوش مصنو
 # ================= AI HELPER FUNCTION (STREAMING VERSION) =================
 def ask_ai(user_prompt):
     try:
-        # دریافت کلید API از رندر
         api_key = os.environ.get("GEMINI_API_KEY")
         
         if not api_key:
@@ -62,10 +61,10 @@ def ask_ai(user_prompt):
         
         system_instruction = (
             "تو یک دستیار هوش مصنوعی آموزشی هوشمند، مهربان و فوق‌العاده مسلط برای دانشجوهای دانشگاه هستی. "
-            "به سوالات درسی، برنامه‌نویسی، معادلات و علمی آن‌ها به زبان فارسی روان، دقیق و ساختاریافته پاسخ بده."
+            "به سوالات درسی، برنامه‌نویسی، معادلات و علمی آن‌ها به زبان فارسی روان، دقیق و ساختاریافته پاسخ بده. "
+            "هر جا نیاز به کدنویسی بود، کدهای کامل را داخل کادرهای کد مارک‌داون (```) قرار بده."
         )
         
-        # استفاده از متد استریم برای دریافت زنده و کلمه به کلمه پاسخ از گوگل
         response_stream = client.models.generate_content_stream(
             model='gemini-2.5-flash',
             contents=user_prompt,
@@ -79,11 +78,10 @@ def ask_ai(user_prompt):
             if chunk.text:
                 full_response += chunk.text
                 counter += 1
-                # هر ۳ تکه یک‌بار متن را می‌فرستیم تا سرعت آپدیت در تلگرام منطقی باشد و ربات لیمیت نشود
-                if counter % 3 == 0:
-                    yield full_response + " ✍️..."
+                # آپدیت هر ۴ تکه یک‌بار برای افزایش پایداری مارک‌داون تلگرام و سرعت بالا
+                if counter % 4 == 0:
+                    yield full_response + "\n\n✍️ *در حال نوشتن کدهای درخواستی...*"
                     
-        # ارسال نهایی متن کامل بدون علامت در حال نوشتن
         yield full_response
 
     except Exception as e:
@@ -200,7 +198,7 @@ async def ask_final(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ask_match(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["پایان‌ترم"] = update.message.text
-    await update.message.reply_text("📊 * (از 1 تا 5) تطبیق با جزوه:*\nتطبیق سوالات با جزوه (از 1 تا 5)？", parse_mode="Markdown", reply_markup=cancel_markup())
+    await update.message.reply_text("📊 * (از 1 تا 5) تطبیق با جزوه:*\nتطبیق سوالات با جزوه (از 1 تا 5)؟", parse_mode="Markdown", reply_markup=cancel_markup())
     return ASK_MATCH
 
 async def ask_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -343,23 +341,47 @@ async def receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = user.id
     user_text = update.message.text
 
-    # ۱. پردازش چت با هوش مصنوعی (ویرایش زنده و استریم)
+    # ۱. پردازش چت با هوش مصنوعی (مدیریت فوق‌العاده هوشمند استریم و کدهای برنامه‌نویسی)
     if ai_chats.get(user_id):
-        waiting_msg = await update.message.reply_text("🤖 در حال بررسی سوال شما...")
+        waiting_msg = await update.message.reply_text("🤖 در حال پردازش درخواست شما...")
         
-        # دریافت تکه تکه جواب از تابع کمکی
+        last_sent_text = ""
+        final_clean_response = ""
+        
         for current_text in ask_ai(user_text):
-            try:
-                await waiting_msg.edit_text(current_text)
-            except:
-                pass # جلوگیری از ارور تکرار متن در تلگرام
-                
-        # اضافه کردن منوی بازگشت پس از پایان نوشتن
+            final_clean_response = current_text.replace("\n\n✍️ *در حال نوشتن کدهای درخواستی...*", "")
+            
+            # برای جلوگیری از خطای تلگرام، متن را فقط در صورت تغییرات واقعی ادیت می‌کنیم
+            if current_text != last_sent_text:
+                try:
+                    # تلاش برای ادیت با حالت مارک‌داون تا کدها به مرور زمان زیبا نشان داده شوند
+                    await waiting_msg.edit_text(current_text, parse_mode="Markdown")
+                    last_sent_text = current_text
+                except:
+                    try:
+                        # اگر ساختار مارک‌داون به علت ناقص بودن کد ارور داد، موقتاً به صورت متن ساده نمایش بده
+                        await waiting_msg.edit_text(current_text)
+                        last_sent_text = current_text
+                    except:
+                        pass
+                        
+        # نمایش نهایی پاسخ کاملاً فرمت‌بندی شده به همراه کلید بازگشت
         keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="ai_close")]]
         try:
-            await waiting_msg.edit_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
+            await waiting_msg.edit_text(
+                text=final_clean_response,
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
         except:
-            pass
+            try:
+                # اگر مارک‌داون نهایی به هر دلیلی تداخل کاراکتر داشت، به صورت متن ساده فرستاده می‌شود تا کدها حتماً برسند
+                await waiting_msg.edit_text(
+                    text=final_clean_response,
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+            except:
+                pass
         return
 
     # ۲. اگر ادمین پیامی بفرستد و در حال پاسخ به کسی باشد
