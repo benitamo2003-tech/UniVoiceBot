@@ -6,8 +6,9 @@ from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, MessageHandler,
     ConversationHandler, filters, ContextTypes
 )
+from google import genai
+
 # ================= SERVER FOR RENDER (KEEP ALIVE) =================
-# ================= KEEP ALIVE SERVER =================
 app_flask = Flask(__name__)
 
 @app_flask.route("/")
@@ -17,6 +18,7 @@ def home():
 def run_flask():
     port = int(os.environ.get("PORT", 8080))
     app_flask.run(host="0.0.0.0", port=port)
+
 # ================= CONFIG =================
 TOKEN = os.environ.get("BOT_TOKEN")
 url = os.environ.get("SELF_URL")
@@ -43,6 +45,30 @@ FORM_QUESTIONS = [
 post_reactions = {} # message_id -> {"likes": set(), "dislikes": set()}
 anon_sessions = {}
 reply_sessions = {}
+active_chats = {}  # user_id -> True (نشست‌های فعال چت ناشناس)
+ai_chats = {}      # user_id -> True (نشست‌های فعال هوش مصنوعی)
+
+# ================= AI HELPER FUNCTION =================
+def ask_ai(user_prompt):
+    try:
+        # دریافت کلید API از رندر یا جایگذاری مستقیم
+        api_key = os.environ.get("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY")
+        client = genai.Client(api_key=api_key)
+        
+        system_instruction = (
+            "تو یک دستیار هوش مصنوعی آموزشی هوشمند، مهربان و فوق‌العاده مسلط برای دانشجوهای دانشگاه هستی. "
+            "به سوالات درسی، برنامه‌نویسی، معادلات و علمی آن‌ها به زبان فارسی روان، دقیق و ساختاریافته پاسخ بده."
+        )
+        
+        response = client.models.generate_content(
+            model='gemini-1.5-flash',
+            contents=user_prompt,
+            config={'system_instruction': system_instruction}
+        )
+        return response.text
+    except Exception as e:
+        print(f"Error in Gemini API: {e}")
+        return "⚠️ متأسفانه در حال حاضر مشکلی در اتصال به هوش مصنوعی به وجود آمده است. لطفاً کمی بعد دوباره تلاش کنید."
 
 # ================= HELPERS =================
 def reaction_keyboard(msg_id):
@@ -68,17 +94,21 @@ def build_form_text(data):
     lines.append(f"\n🆔 {CHANNEL_TAG}")
     return "\n".join(lines)
 
-
 def cancel_markup():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("❌ انصراف", callback_data="delete_form")]
+        [InlineKeyboardButton("❌ انصراف و لغو فرم", callback_data="delete_form")]
     ])
 
 # ================= HANDLERS =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
+    user_id = update.effective_user.id
+    if user_id in ai_chats: del ai_chats[user_id]
+    if user_id in active_chats: del active_chats[user_id]
+
     keyboard = [
         [InlineKeyboardButton("📝 ثبت نظر درباره استاد", callback_data="start_form")],
+        [InlineKeyboardButton("🤖 دستیار هوش مصنوعی (Gemini)", callback_data="ai_menu")],
         [InlineKeyboardButton("💬 چت خصوصی", url=CHANNEL_DIRECT_LINK)],
         [InlineKeyboardButton("🕵️ چت ناشناس با ادمین", callback_data="anon_start")]
     ]
@@ -97,11 +127,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.callback_query.answer()
         await update.callback_query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-
-# تابع کمکی برای ایجاد دکمه انصراف در هر مرحله
-# تابع کمکی برای دکمه انصراف
-def cancel_markup():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف و لغو فرم", callback_data="delete_form")]])
 
 async def start_form(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "✨ *شروع ثبت تجربه جدید*\n" + "─" * 15 + "\n👨‍🏫 *نام استاد:* \nلطفاً نام استاد را وارد کنید:"
@@ -165,7 +190,7 @@ async def ask_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ask_conclusion(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["راه ارتباطی"] = update.message.text
-    await update.message.reply_text("📌 *نتیجه‌گیری:*\nدر کل این استاد را پیشنهاد می‌کنید؟", parse_mode="Markdown", reply_markup=cancel_markup())
+    await update.message.reply_text("📌 *نتیجه‌گیری:*\nدر کل این استاد را پیشنهاد می‌کنید？", parse_mode="Markdown", reply_markup=cancel_markup())
     return ASK_CONCLUSION
 
 async def ask_semester(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -183,7 +208,6 @@ async def finish_form(update: Update, context: ContextTypes.DEFAULT_TYPE):
     summary = build_form_text(context.user_data)
     keyboard = [[InlineKeyboardButton("✅ ارسال نهایی", callback_data="submit_form")],
                 [InlineKeyboardButton("🗑 لغو و حذف", callback_data="delete_form")]]
-    # استفاده از Markdown معمولی برای جلوگیری از ارور کاراکترهای خاص
     await update.message.reply_text(f"🌈 *پیش‌نمایش فرم شما:*\n\n{summary}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
     return ConversationHandler.END
 
@@ -193,6 +217,7 @@ async def delete_form(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.message.edit_text("❌ عملیات ثبت نظر لغو شد. برای شروع مجدد /start را بزنید.")
     context.user_data.clear()
     return ConversationHandler.END
+
 # ================= SUBMIT & ADMIN =================
 async def submit_form(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -239,17 +264,36 @@ async def handle_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
         res["dislikes"].add(user_id)
     await query.message.edit_reply_markup(reply_markup=reaction_keyboard(msg_id))
 
-# ================= ANON CHAT =================
-# ================= GLOBAL SESSIONS =================
-active_chats = {}  # user_id -> True (نشست‌های فعال چت)
-reply_sessions = {} # admin_id -> target_user_id
-post_reactions = {}
-# ================= ANON CHAT HANDLERS =================
+# ================= AI HANDLERS =================
+async def ai_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.callback_query.answer()
+    user_id = update.callback_query.from_user.id
+    ai_chats[user_id] = True  # فعال کردن نشست هوش مصنوعی
+    if user_id in active_chats: del active_chats[user_id] # قطع چت ناشناس در صورت فعال بودن
+    
+    keyboard = [
+        [InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="ai_close")]
+    ]
+    guide_text = (
+        "🤖 *به دستیار هوشمند آموزشی (Gemini) خوش آمدید!* 🤖\n\n"
+        "من اینجام تا توی تمام کارهای درسی، دانشگاهی و برنامه‌نویسی کمکت کنم. "
+        "هر سوال علمی، حل تمرین، خلاصه‌سازی جزوه یا رفع اشکال کد داری، همین الان برام بفرست!\n\n"
+        "✍️ *لطفاً سوال خودت را در کادر زیر بنویس و ارسال کن:*"
+    )
+    await update.callback_query.message.edit_text(guide_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
+async def ai_close(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.callback_query.from_user.id
+    if user_id in ai_chats: 
+        del ai_chats[user_id]
+    await start(update, context)
+
+# ================= ANON CHAT HANDLERS =================
 async def anon_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.answer()
     user_id = update.callback_query.from_user.id
-    active_chats[user_id] = True  # شروع نشست چت
+    active_chats[user_id] = True  # شروع نشست چت ناشناس
+    if user_id in ai_chats: del ai_chats[user_id] # قطع چت هوش مصنوعی در صورت فعال بودن
     
     keyboard = [[InlineKeyboardButton("❌ پایان چت ناشناس", callback_data="end_chat")]]
     await update.callback_query.message.reply_text(
@@ -265,7 +309,6 @@ async def end_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id in active_chats:
         del active_chats[user_id]
     
-    # اگر ادمین چت را بست
     if user_id == ADMIN_ID and user_id in reply_sessions:
         target_id = reply_sessions[user_id]
         if target_id in active_chats: del active_chats[target_id]
@@ -274,24 +317,34 @@ async def end_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.message.edit_text("✅ چت پایان یافت. برای شروع مجدد /start را بزنید.")
 
+# ================= CENTRAL MESSAGE RECEIVER =================
 async def receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
     user_id = user.id
+    user_text = update.message.text
 
-    # ۱. اگر ادمین پیامی بفرستد و در حال پاسخ به کسی باشد
+    # ۱. پردازش چت با هوش مصنوعی
+    if ai_chats.get(user_id):
+        waiting_msg = await update.message.reply_text("🤖 در حال تفکر و بررسی سوال شما... لطفاً چند لحظه صبر کنید.")
+        ai_response = ask_ai(user_text)
+        
+        # ساخت مجدد کیبورد بازگشت برای راحتی کاربر
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="ai_close")]]
+        await waiting_msg.edit_text(ai_response, reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+
+    # ۲. اگر ادمین پیامی بفرستد و در حال پاسخ به کسی باشد
     if user_id == ADMIN_ID and user_id in reply_sessions:
         target_id = reply_sessions[user_id]
-        
-        # کیبورد برای کاربر (شامل دکمه پاسخ و پایان)
         user_keyboard = [
-            [InlineKeyboardButton("✉️ پاسخ به ادمین", callback_data="anon_start")], # بازنشانی حالت چت اگر قطع شده باشد
+            [InlineKeyboardButton("✉️ پاسخ به ادمین", callback_data="anon_start")],
             [InlineKeyboardButton("❌ پایان چت", callback_data="end_chat")]
         ]
         
         try:
             await context.bot.send_message(
                 chat_id=target_id, 
-                text=f"📩 **پیام جدید از طرف ادمین:**\n\n{update.message.text}",
+                text=f"📩 **پیام جدید از طرف ادمین:**\n\n{user_text}",
                 reply_markup=InlineKeyboardMarkup(user_keyboard),
                 parse_mode="Markdown"
             )
@@ -300,11 +353,9 @@ async def receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ خطا: امکان ارسال پیام به کاربر وجود ندارد (شاید ربات را بلاک کرده باشد).")
         return
 
-    # ۲. اگر کاربر عادی در حالت چت فعال باشد
+    # ۳. اگر کاربر عادی در حالت چت ناشناس فعال باشد
     if active_chats.get(user_id):
         username = f"@{user.username}" if user.username else "بدون یوزرنیم"
-        
-        # کیبورد برای ادمین
         admin_keyboard = [
             [InlineKeyboardButton("✉️ پاسخ به این کاربر", callback_data=f"reply_to:{user_id}")],
             [InlineKeyboardButton("❌ قطع دسترسی کاربر", callback_data="end_chat")]
@@ -315,7 +366,7 @@ async def receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"👤 **فرستنده:** {user.full_name}\n"
             f"🆔 `{user_id}` | {username}\n"
             f"────────────────\n"
-            f"📝 **متن:** {update.message.text}"
+            f"📝 **متن:** {user_text}"
         )
         
         await context.bot.send_message(
@@ -325,12 +376,15 @@ async def receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
         
-        # تاییدیه برای کاربر (با دکمه پایان برای اطمینان)
         user_status_keyboard = [[InlineKeyboardButton("❌ پایان گفتگو", callback_data="end_chat")]]
         await update.message.reply_text(
             "🚀 پیام شما با موفقیت به ادمین رسید.\nشما می‌توانید پیام‌های بعدی خود را همینجا بفرستید یا چت را تمام کنید:",
             reply_markup=InlineKeyboardMarkup(user_status_keyboard)
         )
+        return
+
+    # ۴. پیام‌های متفرقه خارج از نشست‌ها
+    await update.message.reply_text("⚠️ لطفاً برای استفاده از امکانات ربات، ابتدا یکی از گزینه‌های منو را در دستور /start انتخاب کنید.")
 
 async def admin_reply_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.answer()
@@ -338,7 +392,6 @@ async def admin_reply_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_sessions[ADMIN_ID] = target_id
     await update.callback_query.message.reply_text(f"✍️ در حال پاسخ به `{target_id}` هستید. پیام خود را بفرستید:")
 
-# ================= MAIN =================
 # ================= MAIN =================
 def main():
     threading.Thread(target=run_flask, daemon=True).start()
@@ -370,6 +423,8 @@ def main():
     app.add_handler(CallbackQueryHandler(submit_form, pattern="^submit_form$"))
     app.add_handler(CallbackQueryHandler(admin_actions, pattern="^admin_(accept|reject):"))
     app.add_handler(CallbackQueryHandler(handle_reaction, pattern="^(like|dislike):"))
+    app.add_handler(CallbackQueryHandler(ai_menu, pattern="^ai_menu$"))
+    app.add_handler(CallbackQueryHandler(ai_close, pattern="^ai_close$"))
     app.add_handler(CallbackQueryHandler(anon_start, pattern="^anon_start$"))
     app.add_handler(CallbackQueryHandler(admin_reply_start, pattern="^reply_to:"))
     app.add_handler(CallbackQueryHandler(end_chat, pattern="^end_chat$"))
@@ -379,4 +434,4 @@ def main():
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
-    main() 
+    main()
