@@ -48,7 +48,7 @@ anon_sessions = {}
 reply_sessions = {}
 active_chats = {}  # user_id -> True (نشست‌های فعال چت ناشناس)
 ai_chats = {}      # user_id -> True (نشست‌های فعال هوش مصنوعی)
-
+chat_histories = {}
 # ================= AI HELPER FUNCTION =================
 def ask_ai(user_id, user_prompt, image_bytes=None):
     try:
