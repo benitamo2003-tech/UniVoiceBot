@@ -49,14 +49,15 @@ active_chats = {}  # user_id -> True (نشست‌های فعال چت ناشنا
 ai_chats = {}      # user_id -> True (نشست‌های فعال هوش مصنوعی)
 
 # ================= AI HELPER FUNCTION (STREAMING VERSION) =================
+# ================= AI HELPER FUNCTION (STREAMING VERSION) =================
 def ask_ai(user_prompt):
     try:
         api_key = os.environ.get("GEMINI_API_KEY")
-        
         if not api_key:
-            yield "❌ خطا: متغیر GEMINI_API_KEY در پنل رندر تعریف نشده یا خالی است!"
+            yield "❌ خطا: متغیر GEMINI_API_KEY در پنل رندر تعریف نشده است!"
             return
             
+        # تعریف کلاینت
         client = genai.Client(api_key=api_key)
         
         system_instruction = (
@@ -73,20 +74,17 @@ def ask_ai(user_prompt):
         
         full_response = ""
         counter = 0
-        
         for chunk in response_stream:
             if chunk.text:
                 full_response += chunk.text
                 counter += 1
-                # آپدیت هر ۴ تکه یک‌بار برای افزایش پایداری مارک‌داون تلگرام و سرعت بالا
                 if counter % 4 == 0:
-                    yield full_response + "\n\n✍️ *در حال نوشتن کدهای درخواستی...*"
-                    
+                    yield full_response + "\n\n✍️ *در حال نوشتن...*"
         yield full_response
 
     except Exception as e:
-        print(f"Error in Gemini API: {e}")
-        yield f"⚠️ خطای فنی در اتصال به گوگل رخ داده است:\n`{str(e)}`"
+        print(f"Gemini Error: {e}")
+        yield f"⚠️ خطای فنی در اتصال به گوگل:\n`{str(e)}`"
 
 # ================= HELPERS =================
 def reaction_keyboard(msg_id):
