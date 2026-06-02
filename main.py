@@ -7,7 +7,8 @@ from telegram.ext import (
     ConversationHandler, filters, ContextTypes
 )
 from google import genai
-
+from io import BytesIO
+from PIL import Image
 # ================= SERVER FOR RENDER (KEEP ALIVE) =================
 app_flask = Flask(__name__)
 
@@ -49,7 +50,7 @@ active_chats = {}  # user_id -> True (نشست‌های فعال چت ناشنا
 ai_chats = {}      # user_id -> True (نشست‌های فعال هوش مصنوعی)
 
 # ================= AI HELPER FUNCTION =================
-def ask_ai(user_prompt):
+def ask_ai(user_prompt, image_bytes=None):
     try:
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
@@ -64,9 +65,21 @@ def ask_ai(user_prompt):
             "هر جا نیاز به کدنویسی بود، کدهای کامل را داخل کادرهای کد مارک‌داون (```) قرار بده."
         )
         
+        # آماده‌سازی محتوا (میتواند فقط متن باشد یا ترکیب متن و عکس)
+        contents = []
+        if image_bytes:
+            img = Image.open(BytesIO(image_bytes))
+            contents.append(img)
+        
+        # اگر کاربر همراه عکس متنی فرستاده بود یا کلاً سوالش متنی بود
+        if user_prompt:
+            contents.append(user_prompt)
+        else:
+            contents.append("این تصویر را تحلیل کن و پاسخ یا حل مسائل موجود در آن را به طور کامل بنویس.")
+        
         response_stream = client.models.generate_content_stream(
             model='gemini-2.5-flash',
-            contents=user_prompt,
+            contents=contents,
             config={'system_instruction': system_instruction}
         )
         
@@ -335,13 +348,25 @@ async def end_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
     user_id = user.id
-    user_text = update.message.text
 
+    # ۱. پردازش چت با هوش مصنوعی (پشتیبانی از متن و عکس به صورت استریم)
     if ai_chats.get(user_id):
         waiting_msg = await update.message.reply_text("🤖 در حال پردازش درخواست شما...")
-        last_sent_text = ""
         
-        for current_text in ask_ai(user_text):
+        # دریافت متن (چه پیام معمولی باشد، چه کپشن زیر عکس)
+        user_text = update.message.text or update.message.caption or ""
+        image_bytes = None
+        
+        # اگر کاربر عکس فرستاده باشد، آن را به بایت تبدیل می‌کنیم
+        if update.message.photo:
+            photo_file = await update.message.photo[-1].get_file()
+            image_bytes = await photo_file.download_as_bytearray()
+            
+        last_sent_text = ""
+        final_clean_response = ""
+        
+        # فرستادن متن و عکس به تابع ask_ai
+        for current_text in ask_ai(user_text, image_bytes=image_bytes):
             final_clean_response = current_text.replace("\n\n✍️ *در حال نوشتن کدهای درخواستی...*", "")
             if current_text != last_sent_text:
                 try:
@@ -364,6 +389,10 @@ async def receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
         return
 
+    # استخراج متن پیام برای بخش‌های چت ناشناس و ادمین
+    user_text = update.message.text
+
+    # ۲. اگر ادمین پیامی بفرستد و در حال پاسخ به کسی باشد
     if user_id == ADMIN_ID and user_id in reply_sessions:
         target_id = reply_sessions[user_id]
         user_keyboard = [
@@ -377,6 +406,7 @@ async def receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ خطا: امکان ارسال پیام به کاربر وجود ندارد.")
         return
 
+    # ۳. اگر کاربر عادی در حالت چت ناشناس فعال باشد
     if active_chats.get(user_id):
         username = f"@{user.username}" if user.username else "بدون یوزرنیم"
         admin_keyboard = [
@@ -442,7 +472,7 @@ def main():
     app.add_handler(CallbackQueryHandler(anon_start, pattern="^anon_start$"))
     app.add_handler(CallbackQueryHandler(admin_reply_start, pattern="^reply_to:"))
     app.add_handler(CallbackQueryHandler(end_chat, pattern="^end_chat$"))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_msg))
+    app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO) & ~filters.COMMAND, receive_msg))
 
     print("✅ ربات تلگرام با موفقیت آنلاین شد!")
     app.run_polling(drop_pending_updates=True)
