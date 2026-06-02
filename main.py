@@ -50,36 +50,53 @@ active_chats = {}  # user_id -> True (نشست‌های فعال چت ناشنا
 ai_chats = {}      # user_id -> True (نشست‌های فعال هوش مصنوعی)
 
 # ================= AI HELPER FUNCTION =================
-def ask_ai(user_prompt, image_bytes=None):
+def ask_ai(user_id, user_prompt, image_bytes=None):
     try:
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
-            yield "❌ خطا: متغیر GEMINI_API_KEY در پنل رندر تعریف نشده است!"
+            yield "❌ خطا: متغیر GEMINI_API_KEY تعریف نشده است!"
             return
             
         client = genai.Client(api_key=api_key)
         
         system_instruction = (
-            "تو یک دستیار هوش مصنوعی آموزشی هوشمند، مهربان و فوق‌العاده مسلط برای دانشجوهای دانشگاه هستی. "
-            "به سوالات درسی، برنامه‌نویسی، معادلات و علمی آن‌ها به زبان فارسی روان، دقیق و ساختاریافته پاسخ بده. "
-            "هر جا نیاز به کدنویسی بود، کدهای کامل را داخل کادرهای کد مارک‌داون (```) قرار بده."
+            "تو یک دستیار هوش مصنوعی آموزشی هوشمند و مسلط برای دانشجوهای دانشگاه هستی. "
+            "به سوالات درسی، برنامه‌نویسی و علمی آن‌ها به زبان فارسی روان و ساختاریافته پاسخ بده. "
+            "اگر کاربر گفت بقیش کو یا ادامه‌اش را بنویس، به تاریخچه چت نگاه کن و دقیقاً ادامه‌ی پاسخ قبلی را بنویس."
         )
         
-        # آماده‌سازی محتوا (میتواند فقط متن باشد یا ترکیب متن و عکس)
-        contents = []
+        # ۱. راه‌اندازی یا بازیابی تاریخچه چت کاربر
+        if user_id not in chat_histories:
+            chat_histories[user_id] = []
+            
+        # ۲. آماده‌سازی محتوای پیام جدید کاربر
+        current_content = []
         if image_bytes:
             img = Image.open(BytesIO(image_bytes))
-            contents.append(img)
-        
-        # اگر کاربر همراه عکس متنی فرستاده بود یا کلاً سوالش متنی بود
+            current_content.append(img)
         if user_prompt:
-            contents.append(user_prompt)
-        else:
-            contents.append("این تصویر را تحلیل کن و پاسخ یا حل مسائل موجود در آن را به طور کامل بنویس.")
+            current_content.append(user_prompt)
+        elif not image_bytes:
+            yield "🤖 گوش به زنگم! سوالت رو بپرس."
+            return
+
+        # ۳. اضافه کردن پیام جدید کاربر به تاریخچه چت (با فرمت استاندارد گوگل)
+        # برای سادگی و جلوگیری از سنگین شدن، فقط متن‌ها را در تاریخچه نگه می‌داریم
+        user_text_summary = user_prompt if user_prompt else "[ارسال تصویر]"
+        chat_histories[user_id].append({'role': 'user', 'parts': [user_text_summary]})
+        
+        # ۴. ترکیب تاریخچه با دستورالعمل سیستم برای ارسال به گوگل
+        full_contents = []
+        # اضافه کردن تاریخچه‌های قبلی
+        for history_turn in chat_histories[user_id][:-1]:
+            full_contents.append(history_turn)
+            
+        # اضافه کردن نوبت چت فعلی (که شامل عکس یا متن جدید است)
+        full_contents.append({'role': 'user', 'parts': current_content})
         
         response_stream = client.models.generate_content_stream(
-            model='gemini-2.5-flash',
-            contents=contents,
+            model='gemini-2.5-flash', # لیمیت بسیار بالا و سرعت فوق‌العاده
+            contents=full_contents,
             config={'system_instruction': system_instruction}
         )
         
@@ -91,6 +108,9 @@ def ask_ai(user_prompt, image_bytes=None):
                 counter += 1
                 if counter % 4 == 0:
                     yield full_response + "\n\n✍️ *در حال نوشتن...*"
+                    
+        # ۵. ذخیره پاسخ نهایی ربات در تاریخچه برای دفعات بعدی
+        chat_histories[user_id].append({'role': 'model', 'parts': [full_response]})
         yield full_response
 
     except Exception as e:
@@ -366,7 +386,7 @@ async def receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         final_clean_response = ""
         
         # فرستادن متن و عکس به تابع ask_ai
-        for current_text in ask_ai(user_text, image_bytes=image_bytes):
+        for current_text in ask_ai(user_id, user_text, image_bytes=image_bytes):
             final_clean_response = current_text.replace("\n\n✍️ *در حال نوشتن کدهای درخواستی...*", "")
             if current_text != last_sent_text:
                 try:
