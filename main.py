@@ -424,35 +424,28 @@ async def receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as file_err:
             print(f"File Process Error: {file_err}")
 
-        last_sent_text = ""
-        final_clean_response = ""
-        
-        for current_text in ask_ai(user_id, user_text, image_bytes=image_bytes, file_text=file_text, voice_bytes=voice_bytes):
-            final_clean_response = current_text.replace("\n\n✍ *در حال نوشتن...*", "")
-            if current_text != last_sent_text:
-                try:
-                    await waiting_msg.edit_text(current_text, parse_mode="Markdown")
-                    last_sent_text = current_text
-                except:
-                    try:
-                        await waiting_msg.edit_text(current_text)
-                        last_sent_text = current_text
-                    except:
-                        pass
+        # ۱. دریافت پاسخ به صورت یکپارچه (حذف حلقه Stream مخرب)
+        final_clean_response = ask_ai(user_id, user_text, image_bytes=image_bytes, file_text=file_text, voice_bytes=voice_bytes)
                         
         keyboard = [
             [InlineKeyboardButton("🧹 پاک کردن حافظه (چت جدید)", callback_data="ai_clear_history")],
             [InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="ai_close")]
         ]
+        
+        # ۲. سیستم ارسال امن سه مرحله‌ای برای جلوگیری از قفل شدن تحت هر شرایطی
         try:
+            # تلاش اول: ادیت پیام همراه با فرمت زیبای مارک‌داون
             await waiting_msg.edit_text(text=final_clean_response, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
-        except:
+        except Exception as markdown_err:
             try:
+                # تلاش دوم: اگر متون هوش مصنوعی کاراکتر خاصی داشت که مارک‌داون را خراب کرد، متن ساده ادیت شود
                 await waiting_msg.edit_text(text=final_clean_response, reply_markup=InlineKeyboardMarkup(keyboard))
-            except:
-                pass
+            except Exception as final_err:
+                # تلاش سوم: اگر پیام به هر دلیلی ادیت نشد، آن را به عنوان یک ریپلای جدید بفرست تا کاربر بدون پاسخ نماند
+                await update.message.reply_text(text=final_clean_response, reply_markup=InlineKeyboardMarkup(keyboard))
         return
 
+    # ================= بقیه منطق ادمین و چت ناشناس =================
     user_text = update.message.text
     if user_id == ADMIN_ID and user_id in reply_sessions:
         target_id = reply_sessions[user_id]
@@ -509,8 +502,7 @@ def main():
             ASK_SEMESTER: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_grade)],
             ASK_GRADE: [MessageHandler(filters.TEXT & ~filters.COMMAND, finish_form)],
         },
-        fallbacks=[CallbackQueryHandler(delete_form, pattern="^delete_form$")],
-        per_message=True
+        fallbacks=[CallbackQueryHandler(delete_form, pattern="^delete_form$")]
     )
 
     app.add_handler(CommandHandler("start", start))
