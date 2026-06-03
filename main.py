@@ -510,6 +510,7 @@ def main():
             ASK_GRADE: [MessageHandler(filters.TEXT & ~filters.COMMAND, finish_form)],
         },
         fallbacks=[CallbackQueryHandler(delete_form, pattern="^delete_form$")]
+        per_message=True
     )
 
     app.add_handler(CommandHandler("start", start))
