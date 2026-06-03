@@ -509,7 +509,7 @@ def main():
             ASK_SEMESTER: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_grade)],
             ASK_GRADE: [MessageHandler(filters.TEXT & ~filters.COMMAND, finish_form)],
         },
-        fallbacks=[CallbackQueryHandler(delete_form, pattern="^delete_form$")]
+        fallbacks=[CallbackQueryHandler(delete_form, pattern="^delete_form$")],
         per_message=True
     )
 
