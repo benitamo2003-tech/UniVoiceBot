@@ -425,23 +425,24 @@ async def receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print(f"File Process Error: {file_err}")
 
         # ۱. دریافت پاسخ به صورت یکپارچه (حذف حلقه Stream مخرب)
-        final_clean_response = ask_ai(user_id, user_text, image_bytes=image_bytes, file_text=file_text, voice_bytes=voice_bytes)
+       # دریافت پاسخ نهایی به صورت یکپارچه و مدیریت خطای امن
+        try:
+            final_clean_response = ask_ai(user_id, user_text, image_bytes=image_bytes, file_text=file_text, voice_bytes=voice_bytes)
+        except Exception as ai_err:
+            print(f"AI Call Error: {ai_err}")
+            final_clean_response = f"⚠️ خطای فنی در ارتباط با هوش مصنوعی:\n`{str(ai_err)}`"
                         
         keyboard = [
             [InlineKeyboardButton("🧹 پاک کردن حافظه (چت جدید)", callback_data="ai_clear_history")],
             [InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="ai_close")]
         ]
         
-        # ۲. سیستم ارسال امن سه مرحله‌ای برای جلوگیری از قفل شدن تحت هر شرایطی
         try:
-            # تلاش اول: ادیت پیام همراه با فرمت زیبای مارک‌داون
             await waiting_msg.edit_text(text=final_clean_response, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
         except Exception as markdown_err:
             try:
-                # تلاش دوم: اگر متون هوش مصنوعی کاراکتر خاصی داشت که مارک‌داون را خراب کرد، متن ساده ادیت شود
                 await waiting_msg.edit_text(text=final_clean_response, reply_markup=InlineKeyboardMarkup(keyboard))
             except Exception as final_err:
-                # تلاش سوم: اگر پیام به هر دلیلی ادیت نشد، آن را به عنوان یک ریپلای جدید بفرست تا کاربر بدون پاسخ نماند
                 await update.message.reply_text(text=final_clean_response, reply_markup=InlineKeyboardMarkup(keyboard))
         return
 
