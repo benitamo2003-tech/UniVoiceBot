@@ -6,7 +6,7 @@ from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, MessageHandler,
     ConversationHandler, filters, ContextTypes
 )
-from google import genai
+
 import google.generativeai as old_genai
 from io import BytesIO
 from PIL import Image
