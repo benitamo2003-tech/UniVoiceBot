@@ -10,7 +10,7 @@ from google import genai
 from io import BytesIO
 from PIL import Image
 import PyPDF2
-from pydub import AudioSegment
+
 # ================= SERVER FOR RENDER (KEEP ALIVE) =================
 app_flask = Flask(__name__)
 
@@ -24,7 +24,6 @@ def run_flask():
 
 # ================= CONFIG =================
 TOKEN = os.environ.get("BOT_TOKEN")
-url = os.environ.get("SELF_URL")
 ADMIN_ID = 7997819976
 CHANNEL_ID = "@UniVoiceHub"
 BOT_USERNAME = "UniFeedbackBot"
@@ -45,12 +44,12 @@ FORM_QUESTIONS = [
     ("📌 نتیجه‌گیری", "نتیجه‌گیری"), ("📅 ترمی که با استاد داشتی", "ترم"), ("⭐️ نمره از ۲۰", "نمره"),
 ]
 
-post_reactions = {} # message_id -> {"likes": set(), "dislikes": set()}
-anon_sessions = {}
+post_reactions = {}  # message_id -> {"likes": set(), "dislikes": set()}
 reply_sessions = {}
-active_chats = {}  # user_id -> True (نشست‌های فعال چت ناشناس)
-ai_chats = {}      # user_id -> True (نشست‌های فعال هوش مصنوعی)
+active_chats = {}   # user_id -> True (نشست‌های فعال چت ناشناس)
+ai_chats = {}       # user_id -> True (نشست‌های فعال هوش مصنوعی)
 chat_histories = {}
+
 # ================= AI HELPER FUNCTION =================
 def ask_ai(user_id, user_prompt, image_bytes=None, file_text=None, voice_bytes=None):
     try:
@@ -72,23 +71,19 @@ def ask_ai(user_id, user_prompt, image_bytes=None, file_text=None, voice_bytes=N
             
         current_content = []
         
-        # الف) اضافه کردن عکس
         if image_bytes:
             img = Image.open(BytesIO(image_bytes))
             current_content.append(img)
             
-        # ب) اضافه کردن متن فایل (PDF یا کد)
         if file_text:
             current_content.append(f"[محتوای فایل داکیومنت کاربر]:\n{file_text}")
             
-        # ج) اضافه کردن وویس به فرمت بایت استاندارد برای گوگل
         if voice_bytes:
             current_content.append({
                 "mime_type": "audio/ogg",
                 "data": voice_bytes
             })
             
-        # د) متن پیام یا کپشن
         if user_prompt:
             current_content.append(user_prompt)
             
@@ -135,7 +130,7 @@ def reaction_keyboard(msg_id):
             InlineKeyboardButton(f"👍 {len(data['likes'])}", callback_data=f"like:{msg_id}"),
             InlineKeyboardButton(f"👎 {len(data['dislikes'])}", callback_data=f"dislike:{msg_id}")
         ],
-        [InlineKeyboardButton("📝 ثبت نظر", url=f"[https://t.me/](https://t.me/){BOT_USERNAME}?start=form")]
+        [InlineKeyboardButton("📝 ثبت نظر", url=f"https://t.me/{BOT_USERNAME}?start=form")]
     ])
 
 def build_form_text(data):
@@ -177,8 +172,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 ✨ و یه چیز دیگه: اگه پیشنهادی داری یا دوست داری چیزی به ربات اضافه بشه، حتماً تو دایرکت کانال با من درمیون بذار تا با هم یه تجربه تحصیلی عالی و بی‌دردسر بسازیم!
 
-خب، آماده‌ای شروع کنی؟ 🚀
-"""
+خب، آماده‌ای شروع کنی؟ 🚀"""
+    
     if update.message:
         await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
     else:
@@ -237,7 +232,7 @@ async def ask_final(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ask_match(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["پایان‌ترم"] = update.message.text
-    await update.message.reply_text("📊 * (از 1 تا 5) تطبیق با جزوه:*\nتطبیق سوالات با جزوه (از 1 تا 5) Meso؟", parse_mode="Markdown", reply_markup=cancel_markup())
+    await update.message.reply_text("📊 * (از 1 تا 5) تطبیق با جزوه:*\nتطبیق سوالات با جزوه (از 1 تا 5)؟", parse_mode="Markdown", reply_markup=cancel_markup())
     return ASK_MATCH
 
 async def ask_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -345,6 +340,14 @@ async def ai_close(update: Update, context: ContextTypes.DEFAULT_TYPE):
         del ai_chats[user_id]
     await start(update, context)
 
+async def ai_clear_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer("🧹 حافظه گفتگو پاک شد.")
+    user_id = query.from_user.id
+    if user_id in chat_histories:
+        chat_histories[user_id] = []
+    await query.message.reply_text("🔄 تاریخچه چت شما با هوش مصنوعی کاملاً پاک شد و گفتگو جدید شروع شد.")
+
 # ================= ANON CHAT HANDLERS =================
 async def anon_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.answer()
@@ -388,18 +391,15 @@ async def receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         voice_bytes = None
         
         try:
-            # ۱. دریافت عکس
             if update.message.photo:
                 photo_file = await update.message.photo[-1].get_file()
                 image_bytes = await photo_file.download_as_bytearray()
                 
-            # ۲. دریافت مستقیم وویس بدون نیاز به لایبرری‌های جانبی کرش‌کننده
             elif update.message.voice:
                 await waiting_msg.edit_text("🎙 در حال شنیدن صدای شما...")
                 voice_file = await update.message.voice.get_file()
                 voice_bytes = await voice_file.download_as_bytearray()
                 
-            # ۳. دریافت فایل (PDF یا متنی)
             elif update.message.document:
                 doc = update.message.document
                 file_name = doc.file_name.lower()
@@ -424,7 +424,6 @@ async def receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as file_err:
             print(f"File Process Error: {file_err}")
 
-        # ارسال نهایی به هوش مصنوعی
         last_sent_text = ""
         final_clean_response = ""
         
@@ -454,7 +453,6 @@ async def receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
         return
 
-    # بقیه کدهای مربوط به ادمین و چت ناشناس شما بدون تغییر در ادامه می‌آید...
     user_text = update.message.text
     if user_id == ADMIN_ID and user_id in reply_sessions:
         target_id = reply_sessions[user_id]
@@ -476,20 +474,21 @@ async def receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_text("⚠️ لطفاً برای استفاده از امکانات ربات، ابتدا یکی از گزینه‌های منو را در دستور /start انتخاب کنید.")
-    async def admin_reply_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+# ================= ADMIN CALLBACK HANDLER =================
+async def admin_reply_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.answer()
     target_id = int(update.callback_query.data.split(":")[1])
     reply_sessions[ADMIN_ID] = target_id
     await update.callback_query.message.reply_text(f"✍️ در حال پاسخ به `{target_id}` هستید. پیام خود را بفرستید:")
+
 # ================= MAIN FUNCTION =================
 def main():
-    # ۱. اجرای فلاسك به صورت موازی در ترد مجزا
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.daemon = True
     flask_thread.start()
     print("✅ سرور Flask در پس‌زمینه فعال شد.")
 
-    # ۲. ساخت متغیر ربات به صورت کاملاً استاندارد با اسم کوچک 'app'
     app = Application.builder().token(TOKEN).build()
 
     conv = ConversationHandler(
@@ -520,6 +519,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_reaction, pattern="^(like|dislike):"))
     app.add_handler(CallbackQueryHandler(ai_menu, pattern="^ai_menu$"))
     app.add_handler(CallbackQueryHandler(ai_close, pattern="^ai_close$"))
+    app.add_handler(CallbackQueryHandler(ai_clear_history, pattern="^ai_clear_history$"))
     app.add_handler(CallbackQueryHandler(anon_start, pattern="^anon_start$"))
     app.add_handler(CallbackQueryHandler(admin_reply_start, pattern="^reply_to:"))
     app.add_handler(CallbackQueryHandler(end_chat, pattern="^end_chat$"))
