@@ -476,6 +476,11 @@ async def receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_text("⚠️ لطفاً برای استفاده از امکانات ربات، ابتدا یکی از گزینه‌های منو را در دستور /start انتخاب کنید.")
+    async def admin_reply_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.callback_query.answer()
+    target_id = int(update.callback_query.data.split(":")[1])
+    reply_sessions[ADMIN_ID] = target_id
+    await update.callback_query.message.reply_text(f"✍️ در حال پاسخ به `{target_id}` هستید. پیام خود را بفرستید:")
 # ================= MAIN FUNCTION =================
 def main():
     # ۱. اجرای فلاسك به صورت موازی در ترد مجزا
