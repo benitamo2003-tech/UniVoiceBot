@@ -7,7 +7,7 @@ from telegram.ext import (
     ConversationHandler, filters, ContextTypes
 )
 from google import genai
-from google.genai import types
+import google.generativeai as old_genai
 from io import BytesIO
 from PIL import Image
 import PyPDF2
@@ -52,8 +52,7 @@ ai_chats = {}       # user_id -> True (نشست‌های فعال هوش مصن�
 chat_histories = {}
 
 # ================= AI HELPER FUNCTION =================
-client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
-
+old_genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 def ask_ai(user_id, user_prompt, image_bytes=None, file_text=None, voice_bytes=None):
     try:
         api_key = os.environ.get("GEMINI_API_KEY")
