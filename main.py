@@ -122,6 +122,7 @@ async def receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         voice_bytes = None
         
         try:
+            # اصلاح متد دانلود برای سازگاری کامل با پکیج نسخه ۲۲ تلگرام
             if update.message.photo:
                 photo_file = await update.message.photo[-1].get_file()
                 image_bytes = await photo_file.download_as_bytearray()
@@ -321,7 +322,7 @@ async def ask_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ask_conclusion(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["راه ارتباطی"] = update.message.text
-    await update.message.reply_text("📌 *نتیجه‌گیری:*\nدر کل این استاد را پیشنهاد می‌کنید? ", parse_mode="Markdown", reply_markup=cancel_markup())
+    await update.message.reply_text("📌 *نتیجه‌گیری:*\nدر کل این استاد را پیشنهاد می‌کنید؟", parse_mode="Markdown", reply_markup=cancel_markup())
     return ASK_CONCLUSION
 
 async def ask_semester(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -505,11 +506,9 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_reply_start, pattern="^reply_to:"))
     app.add_handler(CallbackQueryHandler(end_chat, pattern="^end_chat$"))
     
-    # اصلاح فیلتر برای جلوگیری از اختلال در کار کرد فرم نظرسنجی اساتید
     app.add_handler(MessageHandler(
         (filters.TEXT | filters.PHOTO | filters.VOICE | filters.Document.ALL) & 
-        ~filters.COMMAND & 
-        ~filters.StateFilter(), 
+        ~filters.COMMAND, 
         receive_msg
     ))
 
