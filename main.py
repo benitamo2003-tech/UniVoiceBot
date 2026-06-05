@@ -1,5 +1,6 @@
 import os
 import threading
+import time
 from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -50,7 +51,7 @@ reply_sessions = {}
 active_chats = {}   # user_id -> True (نشست‌های فعال چت ناشناس)
 ai_chats = {}       # user_id -> True (نشست‌های فعال هوش مصنوعی)
 chat_histories = {}
-
+user_last_request_time = {}
 # =====================================================
 # ================= AI HELPER FUNCTION =================
 # =====================================================
@@ -114,6 +115,16 @@ async def receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ۱. هندل کردن چت هوش مصنوعی
     if ai_chats.get(user_id):
+        current_time = time.time()
+        last_time = user_last_request_time.get(user_id, 0)
+        
+        if current_time - last_time < 12:  # ۱2 ثانیه استراحت بین هر پیام
+            time_left = int(12 - (current_time - last_time))
+            await update.message.reply_text(f"⚠️ رفیق لطفاً اسپم نکن! {time_left} ثانیه دیگه دوباره امتحان کن تا سرور گوگل ارور نداده. 🚦")
+            return
+            
+        # آپدیت زمان آخرین درخواست کاربر
+        user_last_request_time[user_id] = current_time
         waiting_msg = await update.message.reply_text("🤖 در حال پردازش و تحلیل درخواست شما...")
         
         user_text = update.message.text or update.message.caption or ""
