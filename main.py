@@ -112,28 +112,39 @@ def ask_ai(user_id, user_prompt, image_bytes=None, file_text=None, voice_bytes=N
 async def receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
     user_id = user.id
+    user_text = update.message.text
 
-    # ۱. هندل کردن چت هوش مصنوعی
+    # 🟢 اولویت اول: بررسی اینکه آیا ادمین دارد به یک پیام ناشناس پاسخ می‌دهد
+    if user_id == ADMIN_ID and user_id in reply_sessions:
+        target_id = reply_sessions[user_id]
+        user_keyboard = [[InlineKeyboardButton("✉️ پاسخ به ادمین", callback_data="anon_start")], [InlineKeyboardButton("❌ پایان چت", callback_data="end_chat")]]
+        try:
+            await context.bot.send_message(chat_id=target_id, text=f"📩 **پیام جدید از طرف ادمین:**\n\n{user_text}", reply_markup=InlineKeyboardMarkup(user_keyboard), parse_mode="Markdown")
+            await update.message.reply_text(f"✅ پیام شما به کاربر `{target_id}` تحویل داده شد.")
+        except Exception as admin_send_err:
+            print(f"Admin send error: {admin_send_err}")
+            await update.message.reply_text("❌ خطا: امکان ارسال پیام به کاربر وجود ندارد.")
+        return
+
+    # 🔵 اولویت دوم: هندل کردن چت هوش مصنوعی (فقط اگر ادمین در حال پاسخ به کسی نباشد)
     if ai_chats.get(user_id):
         current_time = time.time()
         last_time = user_last_request_time.get(user_id, 0)
         
-        if current_time - last_time < 12:  # ۱2 ثانیه استراحت بین هر پیام
+        if current_time - last_time < 12:  # ۱۲ ثانیه استراحت بین هر پیام
             time_left = int(12 - (current_time - last_time))
             await update.message.reply_text(f"⚠️ رفیق لطفاً اسپم نکن! {time_left} ثانیه دیگه دوباره امتحان کن تا سرور گوگل ارور نداده. 🚦")
             return
             
-        # آپدیت زمان آخرین درخواست کاربر
         user_last_request_time[user_id] = current_time
         waiting_msg = await update.message.reply_text("🤖 در حال پردازش و تحلیل درخواست شما...")
         
-        user_text = update.message.text or update.message.caption or ""
+        user_text_actual = update.message.text or update.message.caption or ""
         image_bytes = None
         file_text = None
         voice_bytes = None
         
         try:
-            # اصلاح متد دانلود برای سازگاری کامل با پکیج نسخه ۲۲ تلگرام
             if update.message.photo:
                 photo_file = await update.message.photo[-1].get_file()
                 image_bytes = await photo_file.download_as_bytearray()
@@ -168,7 +179,7 @@ async def receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print(f"File Process Error: {file_err}")
 
         try:
-            final_clean_response = ask_ai(user_id, user_text, image_bytes=image_bytes, file_text=file_text, voice_bytes=voice_bytes)
+            final_clean_response = ask_ai(user_id, user_text_actual, image_bytes=image_bytes, file_text=file_text, voice_bytes=voice_bytes)
         except Exception as ai_err:
             print(f"AI Call Error: {ai_err}")
             final_clean_response = f"⚠️ خطای فنی در ارتباط با هوش مصنوعی:\n`{str(ai_err)}`"
@@ -187,20 +198,7 @@ async def receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(text=final_clean_response, reply_markup=InlineKeyboardMarkup(keyboard))
         return
 
-    # ۲. بخش مدیریت پیام‌های ادمین (پاسخ به چت ناشناس)
-    user_text = update.message.text
-    if user_id == ADMIN_ID and user_id in reply_sessions:
-        target_id = reply_sessions[user_id]
-        user_keyboard = [[InlineKeyboardButton("✉️ پاسخ به ادمین", callback_data="anon_start")], [InlineKeyboardButton("❌ پایان چت", callback_data="end_chat")]]
-        try:
-            await context.bot.send_message(chat_id=target_id, text=f"📩 **پیام جدید از طرف ادمین:**\n\n{user_text}", reply_markup=InlineKeyboardMarkup(user_keyboard), parse_mode="Markdown")
-            await update.message.reply_text(f"✅ پیام شما به کاربر `{target_id}` تحویل داده شد.")
-        except Exception as admin_send_err:
-            print(f"Admin send error: {admin_send_err}")
-            await update.message.reply_text("❌ خطا: امکان ارسال پیام به کاربر وجود ندارد.")
-        return
-
-    # ۳. بخش ارسال پیام ناشناس توسط کاربر به ادمین
+    # 🟡 اولویت سوم: بخش ارسال پیام ناشناس توسط کاربر به ادمین
     if active_chats.get(user_id):
         username = f"@{user.username}" if user.username else "بدون یوزرنیم"
         admin_keyboard = [[InlineKeyboardButton("✉️ پاسخ به این کاربر", callback_data=f"reply_to:{user_id}")], [InlineKeyboardButton("❌ قطع دسترسی کاربر", callback_data="end_chat")]]
@@ -210,7 +208,7 @@ async def receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🚀 پیام شما با موفقیت به ادمین رسید.\nشما می‌توانید پیام‌های بعدی خود را همینجا بفرستید:", reply_markup=InlineKeyboardMarkup(user_status_keyboard))
         return
 
-    # ۴. پیام پیش‌فرض برای مواقعی که هیچ حالتی فعال نیست
+    # ۴. پیام پیش‌فرض
     await update.message.reply_text("⚠️ لطفاً برای استفاده از امکانات ربات، ابتدا یکی از گزینه‌های منو را در دستور /start انتخاب کنید.")
 
 # ================= HELPERS =================
@@ -469,9 +467,15 @@ async def end_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.message.edit_text("✅ چت پایان یافت. برای شروع مجدد /start را بزنید.")
 
 # ================= ADMIN CALLBACK HANDLER =================
+# ================= ADMIN CALLBACK HANDLER =================
 async def admin_reply_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.answer()
     target_id = int(update.callback_query.data.split(":")[1])
+    
+    # محکم‌کاری: اگر هوش مصنوعی ادمین روشن است، آن را خاموش کن تا پاسخ به کاربر ارسال شود
+    if ADMIN_ID in ai_chats: 
+        del ai_chats[ADMIN_ID]
+        
     reply_sessions[ADMIN_ID] = target_id
     await update.callback_query.message.reply_text(f"✍️ در حال پاسخ به `{target_id}` هستید. پیام خود را بفرستید:")
 
