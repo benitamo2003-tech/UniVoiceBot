@@ -28,7 +28,7 @@ def run_flask():
 TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID = 7997819976
 CHANNEL_ID = "@UniVoiceHub"
-BOT_USERNAME = "UniFeedbacktecBot"
+BOT_USERNAME = "unifeedbacktecbot"
 CHANNEL_DIRECT_LINK = "https://t.me/UniVoiceHub?direct"
 CHANNEL_TAG = "@UniVoiceHub"
 
@@ -219,7 +219,7 @@ def reaction_keyboard(msg_id):
             InlineKeyboardButton(f"👍 {len(data['likes'])}", callback_data=f"like:{msg_id}"),
             InlineKeyboardButton(f"👎 {len(data['dislikes'])}", callback_data=f"dislike:{msg_id}")
         ],
-        [InlineKeyboardButton("📝 ثبت نظر", url=f"https://t.me/{BOT_USERNAME}?start=form")]
+        [InlineKeyboardButton("📝 ثبت نظر", url=f"tg://resolve?domain={BOT_USERNAME}&start=form)]
     ])
 
 def build_form_text(data):
