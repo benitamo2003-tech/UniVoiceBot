@@ -28,7 +28,7 @@ def run_flask():
 TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID = 7997819976
 CHANNEL_ID = "@UniVoiceHub"
-BOT_USERNAME = "unifeedbacktecbot"
+BOT_USERNAME = "@UnifeedbacktecBot"
 CHANNEL_DIRECT_LINK = "https://t.me/UniVoiceHub?direct"
 CHANNEL_TAG = "@UniVoiceHub"
 
