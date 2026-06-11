@@ -219,7 +219,7 @@ def reaction_keyboard(msg_id):
             InlineKeyboardButton(f"👍 {len(data['likes'])}", callback_data=f"like:{msg_id}"),
             InlineKeyboardButton(f"👎 {len(data['dislikes'])}", callback_data=f"dislike:{msg_id}")
         ],
-        [InlineKeyboardButton("📝 ثبت نظر", url=f"tg://resolve?domain={BOT_USERNAME}&start=form")]
+        [InlineKeyboardButton("📝 ثبت نظر", url="@UnifeedbacktecBot")]
     ])
 
 def build_form_text(data):
