@@ -606,7 +606,8 @@ def main():
             await ptb.bot.set_webhook(url=f"{WEBHOOK_URL}/{TOKEN}")
             print(f"✅ Webhook set: {WEBHOOK_URL}/{TOKEN}")
 
-        asyncio.get_event_loop().run_until_complete(setup_webhook())
+        import asyncio
+asyncio.run(setup_webhook())
         port = int(os.environ.get("PORT", 8080))
         flask_app.run(host="0.0.0.0", port=port)
     else:
