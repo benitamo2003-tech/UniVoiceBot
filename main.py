@@ -598,20 +598,15 @@ def main():
     ))
 
     if WEBHOOK_URL:
-        # حالت Webhook (Render)
         import asyncio
-
         async def setup_webhook():
             await ptb.initialize()
             await ptb.bot.set_webhook(url=f"{WEBHOOK_URL}/{TOKEN}")
             print(f"✅ Webhook set: {WEBHOOK_URL}/{TOKEN}")
-
-        import asyncio
-asyncio.run(setup_webhook())
+        asyncio.run(setup_webhook())
         port = int(os.environ.get("PORT", 8080))
         flask_app.run(host="0.0.0.0", port=port)
     else:
-        # حالت Polling (local development)
         print("✅ Running in polling mode (local)...")
         ptb.run_polling(drop_pending_updates=True)
 
