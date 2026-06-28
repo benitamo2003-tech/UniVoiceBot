@@ -516,10 +516,6 @@ def home():
 
 @flask_app.route(f"/{TOKEN}", methods=["POST"])
 async def webhook():
-    data   = flask_request.get_json(force=True)
-    update = Update.de_json(data, _ptb_app.bot)
-    await _ptb_app.process_update(update)
-    return "ok", 200
 
 # ================================================================
 #  MAIN
