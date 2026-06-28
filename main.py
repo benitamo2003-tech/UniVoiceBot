@@ -10,7 +10,7 @@ from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, ConversationHandler, filters, ContextTypes
 )
-import google.generativeai as genai
+from google import genai
 from PIL import Image
 import PyPDF2
 
@@ -27,7 +27,7 @@ WEBHOOK_URL      = os.environ.get("WEBHOOK_URL", "")   # مثال: https://xxx.o
 GEMINI_API_KEY   = os.environ.get("GEMINI_API_KEY", "")
 
 if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+    client = genai.Client(api_key=GEMINI_API_KEY)
 
 # ================================================================
 #  STATE FILE  (جلوگیری از پاک شدن بعد restart)
@@ -329,11 +329,9 @@ def _call_gemini(user_id: int, prompt: str, image_bytes=None, file_text=None, vo
     try:
         if not GEMINI_API_KEY:
             return "❌ خطا: GEMINI_API_KEY تنظیم نشده!"
-        model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash",
-            system_instruction=(
-                "تو یک دستیار هوش مصنوعی آموزشی هستی. "
-                "به سوالات درسی، برنامه‌نویسی و علمی به زبان فارسی روان پاسخ بده."
+        response = client.models.generate_content(
+    model="gemini-2.5-flash",
+    contents=parts
             ),
         )
         parts = []
