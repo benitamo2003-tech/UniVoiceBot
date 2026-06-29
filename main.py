@@ -469,18 +469,16 @@ async def route_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ================================================================
 #  FLASK
 # ================================================================
-flask_app = Flask(__name__)
-_ptb_app = None
-
-@flask_app.route("/")
-def home():
-    return "Bot is alive!", 200
-
 @flask_app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
     data = flask_request.get_json(force=True)
     update = Update.de_json(data, _ptb_app.bot)
-    asyncio.run(_ptb_app.process_update(update))
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(_ptb_app.process_update(update))
+    finally:
+        loop.close()
     return "ok", 200
 
 # ================================================================
