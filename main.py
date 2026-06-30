@@ -11,6 +11,7 @@ from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, ConversationHandler, filters, ContextTypes
 )
+from telegram.helpers import escape_markdown
 from google import genai
 from google.genai import types
 import PyPDF2
@@ -114,9 +115,18 @@ def cancel_kb():
     return InlineKeyboardMarkup([[InlineKeyboardButton("❌ انصراف و لغو فرم", callback_data="delete_form")]])
 
 def build_form_text(data):
+    """
+    NOTE: user-submitted values are escaped for Markdown (version 1) before
+    being inserted into the message. Without this, a stray '*', '_', '`',
+    '[' or ']' in any of the user's answers causes Telegram to reject the
+    message (Can't parse entities) and the bot appears to "get stuck" right
+    after the last question is answered.
+    """
     lines = []
     for title, key in FORM_QUESTIONS:
-        lines.append(f"*{title}:*\n{data.get(key, '-')}\n")
+        raw_value = str(data.get(key, '-'))
+        safe_value = escape_markdown(raw_value, version=1)
+        lines.append(f"*{title}:*\n{safe_value}\n")
     lines += [
         "──────────────",
         "👍 *موافق این نظر هستم*",
@@ -237,7 +247,12 @@ async def step_finish(u, c):
         [InlineKeyboardButton("✅ ارسال نهایی", callback_data="submit_form")],
         [InlineKeyboardButton("🗑 لغو و حذف", callback_data="delete_form")],
     ])
-    await u.message.reply_text(f"🌈 *پیش‌نمایش فرم شما:*\n\n{summary}", reply_markup=kb, parse_mode="Markdown")
+    try:
+        await u.message.reply_text(f"🌈 *پیش‌نمایش فرم شما:*\n\n{summary}", reply_markup=kb, parse_mode="Markdown")
+    except Exception as e:
+        print(f"Preview send error: {e}")
+        # Fallback: send without Markdown so the user is never left stuck
+        await u.message.reply_text(f"🌈 پیش‌نمایش فرم شما:\n\n{summary}", reply_markup=kb)
     return ConversationHandler.END
 
 async def cb_delete_form(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -254,7 +269,11 @@ async def cb_submit_form(update: Update, context: ContextTypes.DEFAULT_TYPE):
         InlineKeyboardButton("✅ تایید انتشار", callback_data=f"admin_accept:{query.from_user.id}"),
         InlineKeyboardButton("❌ رد فرم", callback_data=f"admin_reject:{query.from_user.id}"),
     ]])
-    await context.bot.send_message(chat_id=ADMIN_ID, text=f"📥 *فرم جدید دریافت شد:*\n\n{summary}", reply_markup=kb, parse_mode="Markdown")
+    try:
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"📥 *فرم جدید دریافت شد:*\n\n{summary}", reply_markup=kb, parse_mode="Markdown")
+    except Exception as e:
+        print(f"Admin notify error: {e}")
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"📥 فرم جدید دریافت شد:\n\n{summary}", reply_markup=kb)
     await query.message.edit_text("📨 فرم شما برای ادمین ارسال شد. پس از بررسی در کانال منتشر می‌شود.")
 
 async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -264,7 +283,11 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = int(user_id_str)
     form_text = query.message.text.replace("📥 فرم جدید دریافت شد:\n\n", "")
     if action == "admin_accept":
-        msg = await context.bot.send_message(chat_id=CHANNEL_ID, text=form_text, parse_mode="Markdown")
+        try:
+            msg = await context.bot.send_message(chat_id=CHANNEL_ID, text=form_text, parse_mode="Markdown")
+        except Exception as e:
+            print(f"Channel publish error: {e}")
+            msg = await context.bot.send_message(chat_id=CHANNEL_ID, text=form_text)
         post_reactions[msg.message_id] = {"likes": set(), "dislikes": set()}
         _save_state()
         await msg.edit_reply_markup(reply_markup=reaction_kb(msg.message_id))
